@@ -1,20 +1,23 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import Http404
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils import timezone
 from django.db.models import F
 from django.views.decorators.http import require_POST
 from django.contrib import messages
-
+from django.conf import settings
 from .models import LinkMapping, ClickLog
 from datetime import timedelta
 from . import service
-
+from django.http import JsonResponse
 import qrcode
 import base64
 from io import BytesIO
-import socket
+from django.views.decorators.cache import never_cache
+from django.core.cache import cache
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Helper function: get client IP
@@ -28,14 +31,16 @@ def _client_ip(request):
 # 📊 Stats Page
 def stats(request, url_hash):
     lm = get_object_or_404(LinkMapping, hash=url_hash)
-    logs = lm.clicks.order_by('-clicked_at')[:25]  # last 25 clicks
+    lm.refresh_from_db()
+    logs = lm.clicks.only('clicked_at', 'ip', 'user_agent', 'referrer').order_by('-clicked_at')[:25]  # last 25 clicks
 
     # Detect local IP automatically
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
+    # hostname = socket.gethostname()
+    # local_ip = socket.gethostbyname(hostname)
 
-    # Build shortened URL with local IP instead of 127.0.0.1
-    shortened_url = f"http://{local_ip}:8000{reverse('redirect', args=[lm.hash])}"
+    # # Build shortened URL with local IP instead of 127.0.0.1
+    # shortened_url = f"http://{local_ip}:8000{reverse('redirect', args=[lm.hash])}"
+    shortened_url = f"{settings.SITE_URL}{reverse('redirect', args=[lm.hash])}"
 
     # ✅ Generate QR code
     qr = qrcode.QRCode(
@@ -65,7 +70,7 @@ def index(request):
     return render(request, 'main/index.html')
 
 
-# ✂️ Shorten URL
+# ✂ Shorten URL
 def shorten(request, url):
     custom_hash = request.POST.get('custom_hash', None)
     if not url.startswith(('http://', 'https://')):
@@ -93,12 +98,13 @@ def shorten(request, url):
         lm.is_active = True
         lm.save()
 
-        # Detect local IP automatically
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
+        # # Detect local IP automatically
+        # hostname = socket.gethostname()
+        # local_ip = socket.gethostbyname(hostname)
 
-        shortened_url = f"http://{local_ip}:8000{reverse('redirect', args=[shortened_url_hash])}"
-
+        # shortened_url = f"http://{local_ip}:8000{reverse('redirect', args=[shortened_url_hash])}"
+        shortened_url = f"{settings.SITE_URL}{reverse('redirect', args=[shortened_url_hash])}"
+        
         # ✅ Generate QR code
         qr = qrcode.QRCode(
             version=1,
@@ -139,6 +145,7 @@ def shorten_post(request):
 
 
 # 🔗 Redirect handler
+@never_cache
 def redirect_hash(request, url_hash):
     lm = get_object_or_404(LinkMapping, hash=url_hash)
 
@@ -163,18 +170,60 @@ def redirect_hash(request, url_hash):
 # 🚫 Deactivate Link
 @require_POST
 def deactivate_link(request, url_hash):
-    link = get_object_or_404(LinkMapping, hash=url_hash)
-    link.is_active = False
-    link.save()
-    messages.warning(request, "⚠️ Link has been deactivated.")
+    # link = get_object_or_404(LinkMapping, hash=url_hash)
+    # link.is_active = False
+    # link.save()
+    updated = LinkMapping.objects.filter(hash=url_hash).update(is_active=False)
+    cache.delete(f'url_{url_hash}')
+    logger.info("deactivate_link called for %s update=%s", url_hash, updated)
+    
+    next_action_url = reverse('activate_link', args=[url_hash])
+    # if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+    #     return JsonResponse({'status': 'ok' if updated else 'not_found', 'is_active': False, 'next_action_url': next_action_url})
+    is_ajax = (request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest') or ('application/json' in request.headers.get('Accept', ''))
+
+    if is_ajax:
+        return JsonResponse({
+            'status': 'ok' if updated else 'not_found',
+            'is_active': False,
+            'next_action_url': next_action_url
+        })
+    
+    if updated:
+        messages.warning(request, "⚠ Link has been deactivated.")
+
+    else:
+        messages.error(request, " Link not found!")
+
     return redirect('stats', url_hash=url_hash)
 
 
 # ✅ Activate Link
 @require_POST
 def activate_link(request, url_hash):
-    link = get_object_or_404(LinkMapping, hash=url_hash)
-    link.is_active = True
-    link.save()
-    messages.success(request, "✅ Link has been activated successfully!")
+    # link = get_object_or_404(LinkMapping, hash=url_hash)
+    # link.is_active = True
+    # link.save()
+    updated = LinkMapping.objects.filter(hash=url_hash).update(is_active=True)
+    
+    cache.delete(f'url_{url_hash}')
+    logger.info("activate_link called for %s updated=%s", url_hash, updated)
+    
+    next_action_url = reverse('deactivate_link', args=[url_hash])
+    # if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+    #     return JsonResponse({'status': 'ok' if updated else 'not_found', 'is_active': True, 'next_action_url': next_action_url})
+
+    is_ajax = (request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest') or ('application/json' in request.headers.get('Accept', ''))
+
+    if is_ajax:
+        return JsonResponse({
+            'status': 'ok' if updated else 'not_found',
+            'is_active': True,
+            'next_action_url': next_action_url
+        })
+    
+    if updated:
+        messages.success(request, "✅ Link has been activated successfully!")
+    else:
+        messages.error(request, "❌ Link not found!")
     return redirect('stats', url_hash=url_hash)

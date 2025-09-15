@@ -26,10 +26,14 @@ SECRET_KEY = 'django-insecure-z^(*s51^4l(936wi!i3$mjt$qd&cv*et-@wks3%j4*t@x%tf$i
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.1.36', "192.168.1.34", "192.168.1.37" ]
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+SITE_URL = "http://localhost:8000"
+
+if os.environ.get('SITE_URL'):
+    SITE_URL = os.environ.get('SITE_URL')
 
 
-# Application definition
+# Application definition 
 
 INSTALLED_APPS = [
     'django.contrib.admin',

@@ -2,23 +2,19 @@
 {% block content %}
 <div class="card p-4">
   <h3>Stats for {{ link.hash }}</h3>
+
   <p>
     <strong>Original URL:</strong> {{ link.original_url }} <br>
-    <strong>Shortened URL:</strong> 
-    <a href="{{ shortened_url }}">{{ shortened_url }}</a>
-    <span class="badge bg-primary ms-2">
-      {{ link.click_count }} clicks
-    </span>
+    <strong>Shortened URL:</strong>
+    <a href="{{ shortened_url }}" target="_blank">{{ shortened_url }}</a>
+    <span class="badge bg-primary ms-2">{{ link.click_count }} clicks</span>
   </p>
 
   <div class="my-3 text-start">
     <h5>QR Code</h5>
-    <img src="data:image/png;base64,{{ qr_img }}" alt="QR Code"
-         class="img-thumbnail" style="max-width: 150px;">
+    <img src="data:image/png;base64,{{ qr_img }}" alt="QR Code" class="img-thumbnail" style="max-width:150px;">
     <br>
-    <a href="data:image/png;base64,{{ qr_img }}" 
-       download="lynkr-qr-{{ link.hash }}.png"
-       class="btn btn-sm btn-outline-primary mt-2">
+    <a href="data:image/png;base64,{{ qr_img }}" download="lynkr-qr-{{ link.hash }}.png" class="btn btn-sm btn-outline-primary mt-2">
       <i class="bi bi-download"></i> Download QR
     </a>
   </div>
@@ -29,39 +25,28 @@
       <strong>Expires At:</strong> {{ link.expires_at }} <br>
     {% endif %}
     <strong>Status:</strong>
-    {% if link.is_active %}
-      <span class="text-success">Active</span>
-    {% else %}
-      <span class="text-danger">Inactive</span>
-    {% endif %}
+    <span id="link-status" class="{% if link.is_active %}text-success{% else %}text-danger{% endif %}">
+      {% if link.is_active %}Active{% else %}Inactive{% endif %}
+    </span>
   </p>
 
-  <!-- Buttons in one row -->
-  <div class="d-flex flex-wrap gap-2 my-3">
-  {% if link.is_active %}
-    <!-- 🚫 Deactivate button -->
-    <form method="POST" action="{% url 'deactivate_link' link.hash %}" class="d-inline">
+  <!-- Action area: single form used for both activate/deactivate; data-attrs contain both URLs -->
+  <div id="action-area" class="d-flex flex-wrap gap-2 my-3 align-items-center">
+    <form method="POST"
+          id="toggle-form"
+          action="{% if link.is_active %}{% url 'deactivate_link' link.hash %}{% else %}{% url 'activate_link' link.hash %}{% endif %}"
+          class="d-inline {% if link.is_active %}deactivate-form{% else %}activate-form{% endif %}"
+          data-hash="{{ link.hash }}"
+          data-activate-url="{% url 'activate_link' link.hash %}"
+          data-deactivate-url="{% url 'deactivate_link' link.hash %}">
       {% csrf_token %}
-      <button type="submit" class="btn btn-danger">
-        🚫 Deactivate
+      <button type="submit" id="action-button" class="btn {% if link.is_active %}btn-danger{% else %}btn-success{% endif %}">
+        {% if link.is_active %}🚫 Deactivate{% else %}✅ Activate{% endif %}
       </button>
     </form>
-  {% else %}
-    <!-- ✅ Activate button -->
-    <form method="POST" action="{% url 'activate_link' link.hash %}" class="d-inline">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-success">
-        ✅ Activate
-      </button>
-    </form>
-  {% endif %}
 
-  <!-- 🔄 Refresh button -->
-  <a href="{% url 'stats' link.hash %}" class="btn btn-outline-secondary">
-    🔄 Refresh Stats
-  </a>
-</div>
-
+    <a href="{% url 'stats' link.hash %}" class="btn btn-outline-secondary ms-2">🔄 Refresh Stats</a>
+  </div>
 
   <hr>
   <h4>Recent Clicks</h4>
@@ -79,7 +64,7 @@
       <tr>
         <td>{{ c.clicked_at }}</td>
         <td>{{ c.ip }}</td>
-        <td style="max-width: 300px; word-break: break-word;">{{ c.user_agent }}</td>
+        <td style="max-width:300px; word-break:break-word">{{ c.user_agent }}</td>
         <td>{{ c.referrer }}</td>
       </tr>
       {% empty %}
@@ -91,8 +76,115 @@
   </table>
 </div>
 
+<!-- JS: intercept the toggle form, send AJAX, update UI instantly -->
 <script>
-  // Reload stats page every 5 seconds
-  setTimeout(() => location.reload(), 5000);
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const c = cookies[i].trim();
+      if (c.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(c.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const form = document.getElementById('toggle-form');
+  if (!form) return;
+  const btn = form.querySelector('button[type="submit"]');
+  const statusEl = document.getElementById('link-status');
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Please wait...';
+
+    const csrftoken = getCookie('csrftoken');
+
+    try {
+      const resp = await fetch(form.action, {
+        method: 'POST',
+        // ensure cookies are sent (session / CSRF cookie)
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRFToken': csrftoken,
+          'Accept': 'application/json'
+        },
+        body: new FormData(form)
+      });
+
+      // If server returned redirect or HTML instead of JSON, avoid parsing JSON directly
+      const contentType = resp.headers.get('Content-Type') || '';
+      if (!resp.ok) {
+        console.error('HTTP error', resp.status);
+        // Try to parse JSON error if possible:
+        if (contentType.includes('application/json')) {
+          const errData = await resp.json().catch(() => null);
+          console.error('server json error:', errData);
+        }
+        alert('Server error. Please try again.');
+        btn.disabled = false;
+        btn.textContent = originalText;
+        return;
+      }
+
+      if (!contentType.includes('application/json')) {
+        // server returned HTML (likely a redirect fallback). As a safe fallback, reload page
+        // so the UI reflects real state from server.
+        window.location.reload();
+        return;
+      }
+
+      const data = await resp.json();
+
+      if (data.status !== 'ok') {
+        alert('Operation failed. Try again.');
+        btn.disabled = false;
+        btn.textContent = originalText;
+        return;
+      }
+
+      const isActive = !!data.is_active;
+
+      if (statusEl) {
+        statusEl.textContent = isActive ? 'Active' : 'Inactive';
+        statusEl.className = isActive ? 'text-success' : 'text-danger';
+      }
+
+      // use server-provided next_action_url (absolute path from reverse)
+      const nextUrl = data.next_action_url || (isActive ? form.dataset.deactivateUrl : form.dataset.activateUrl);
+      if (nextUrl) form.action = nextUrl;
+
+      // update button UI
+      if (isActive) {
+        btn.className = 'btn btn-danger';
+        btn.textContent = '🚫 Deactivate';
+        form.classList.remove('activate-form');
+        form.classList.add('deactivate-form');
+      } else {
+        btn.className = 'btn btn-success';
+        btn.textContent = '✅ Activate';
+        form.classList.remove('deactivate-form');
+        form.classList.add('activate-form');
+      }
+
+      btn.disabled = false;
+    } catch (err) {
+      console.error(err);
+      alert('Network error. Try again.');
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+});
 </script>
+
 {% endblock %}

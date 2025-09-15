@@ -6,7 +6,7 @@ import re
 
 class LinkMapping(models.Model):
     original_url = models.CharField(max_length=2000)
-    hash = models.CharField(max_length=30, unique= True, db_index= True)
+    hash = models.CharField(max_length=255, unique= True, db_index= True)
     creation_date = models.DateTimeField(auto_now_add=True)
     is_custom = models.BooleanField(default=False)
 
@@ -29,7 +29,7 @@ class LinkMapping(models.Model):
 # NEW: detailed click logs
 class ClickLog(models.Model):
     link = models.ForeignKey(LinkMapping, on_delete=models.CASCADE, related_name='clicks')
-    clicked_at = models.DateTimeField(auto_now_add=True)
+    clicked_at = models.DateTimeField(auto_now_add=True, db_index=True)
     ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)
     referrer = models.URLField(max_length=2000, blank=True)
