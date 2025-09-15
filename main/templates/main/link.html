@@ -1,0 +1,90 @@
+{% extends "main/base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <!--<div class="alert alert-info">
+  🔒 Tunnel Password: <strong>{{ tunnel_password }}</strong>
+  <small>(Enter when browser prompts)</small>
+</div>-->
+    <div class="col-md-8 col-lg-6">
+        <div class="card p-4">
+            <div class="text-center mb-4">
+                <h1 class="mb-3"><i class="bi bi-check-circle text-success"></i> Success!</h1>
+                <p>Your URL has been shortened</p>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label">Original URL</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" value="{{ original_url }}" readonly>
+                    <button class="btn btn-outline-secondary copy-btn" data-text="{{ original_url }}">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label">Shortened URL</label>
+                <div class="input-group">
+                    <input type="text" class="form-control font-monospace" id="shortenedUrl" value="{{ shortened_url }}"
+                        readonly>
+                    <button class="btn btn-primary copy-btn" data-text="{{ shortened_url }}">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                </div>
+            </div>
+
+            <!-- 🔹 NEW: Click Count -->
+            <!--<div class="mb-4">
+                <label class="form-label">Click Count</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" value="{{ click_count }}" readonly>
+                    <span class="input-group-text">clicks</span>
+                </div>
+                <small class="text-muted">This updates whenever someone uses your short link or scans the QR.</small>
+            </div>-->
+
+            <div class="text-center my-5">
+                <h4>QR Code</h4>
+                <div class="mb-3">
+                    <img src="data:image/png;base64,{{ qr_img }}" alt="QR Code" class="img-fluid"
+                        style="max-width: 200px;">
+                </div>
+                <p class="text-muted">Scan to share instantly</p>
+                <a href="data:image/png;base64,{{ qr_img }}" download="lynkr-qr-{{ hash }}.png"
+                    class="btn btn-outline-primary mt-2">
+                    <i class="bi bi-download"></i> Download QR
+                </a>
+            </div>
+
+            <div class="d-grid gap-2 mt-4">
+                <!-- New stats button -->
+                <a href="{% url 'stats' hash %}" class="btn btn-outline-primary">
+                    📊 View Stats (updated count)
+                </a>
+
+                <a href="{% url 'index' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-plus-circle"></i> Shorten Another URL
+                </a>
+            </div>
+            
+        </div>
+    </div>
+</div>
+
+<script>
+    // Copy to clipboard functionality
+    document.querySelectorAll('.copy-btn').forEach(button => {
+        button.addEventListener('click', function () {
+            const text = this.getAttribute('data-text');
+            navigator.clipboard.writeText(text).then(() => {
+                const originalHtml = this.innerHTML;
+                this.innerHTML = '<i class="bi bi-check"></i> Copied!';
+                setTimeout(() => {
+                    this.innerHTML = originalHtml;
+                }, 2000);
+            });
+        });
+    });
+</script>
+{% endblock %}

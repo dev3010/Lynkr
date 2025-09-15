@@ -1,0 +1,98 @@
+{% extends "main/base.html" %}
+{% block content %}
+<div class="card p-4">
+  <h3>Stats for {{ link.hash }}</h3>
+  <p>
+    <strong>Original URL:</strong> {{ link.original_url }} <br>
+    <strong>Shortened URL:</strong> 
+    <a href="{{ shortened_url }}">{{ shortened_url }}</a>
+    <span class="badge bg-primary ms-2">
+      {{ link.click_count }} clicks
+    </span>
+  </p>
+
+  <div class="my-3 text-start">
+    <h5>QR Code</h5>
+    <img src="data:image/png;base64,{{ qr_img }}" alt="QR Code"
+         class="img-thumbnail" style="max-width: 150px;">
+    <br>
+    <a href="data:image/png;base64,{{ qr_img }}" 
+       download="lynkr-qr-{{ link.hash }}.png"
+       class="btn btn-sm btn-outline-primary mt-2">
+      <i class="bi bi-download"></i> Download QR
+    </a>
+  </div>
+
+  <p>
+    <strong>Click Count:</strong> {{ link.click_count }} <br>
+    {% if link.expires_at %}
+      <strong>Expires At:</strong> {{ link.expires_at }} <br>
+    {% endif %}
+    <strong>Status:</strong>
+    {% if link.is_active %}
+      <span class="text-success">Active</span>
+    {% else %}
+      <span class="text-danger">Inactive</span>
+    {% endif %}
+  </p>
+
+  <!-- Buttons in one row -->
+  <div class="d-flex flex-wrap gap-2 my-3">
+  {% if link.is_active %}
+    <!-- 🚫 Deactivate button -->
+    <form method="POST" action="{% url 'deactivate_link' link.hash %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">
+        🚫 Deactivate
+      </button>
+    </form>
+  {% else %}
+    <!-- ✅ Activate button -->
+    <form method="POST" action="{% url 'activate_link' link.hash %}" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-success">
+        ✅ Activate
+      </button>
+    </form>
+  {% endif %}
+
+  <!-- 🔄 Refresh button -->
+  <a href="{% url 'stats' link.hash %}" class="btn btn-outline-secondary">
+    🔄 Refresh Stats
+  </a>
+</div>
+
+
+  <hr>
+  <h4>Recent Clicks</h4>
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>IP</th>
+        <th>User Agent</th>
+        <th>Referrer</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in logs %}
+      <tr>
+        <td>{{ c.clicked_at }}</td>
+        <td>{{ c.ip }}</td>
+        <td style="max-width: 300px; word-break: break-word;">{{ c.user_agent }}</td>
+        <td>{{ c.referrer }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4">No clicks yet</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  // Reload stats page every 5 seconds
+  setTimeout(() => location.reload(), 5000);
+</script>
+{% endblock %}
